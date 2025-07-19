@@ -236,7 +236,7 @@ void DXApp::Render()
 {
 	float clearColor[4] = { 0.1f, 0.1f, 0.3f, 1.0f };
 	m_d3dContext->ClearRenderTargetView(m_renderTargetView.Get(), clearColor);
-
+	m_d3dContext->OMSetRenderTargets(1, m_renderTargetView.GetAddressOf(), nullptr);
 	UINT stride = sizeof(Vertex);
 	UINT offset = 0;
 	m_d3dContext->IASetInputLayout(m_inputLayout.Get());
