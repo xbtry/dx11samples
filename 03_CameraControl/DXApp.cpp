@@ -98,17 +98,12 @@ bool DXApp::InitWindow(int nCmdShow)
 	}
 
 	GESTURECONFIG gestureConfig = {0};
-	gestureConfig.dwID = GID_ZOOM | GID_PAN; // Enable zoom and pan gestures
+	gestureConfig.dwID = 0; // Enable zoom and pan gestures
 	gestureConfig.dwWant = GC_ALLGESTURES;
 	gestureConfig.dwBlock = 0;
 	if (!SetGestureConfig(m_hWnd, 0, 1, &gestureConfig, sizeof(GESTURECONFIG)))
 	{
 		OutputDebugString(L"Failed to set gesture configuration.\n");
-	}
-
-	if (!RegisterTouchWindow(m_hWnd, 0))
-	{
-		OutputDebugString(L"Failed to register touch window.\n");
 	}
 
 	ShowWindow(m_hWnd, nCmdShow);
@@ -383,63 +378,6 @@ LRESULT CALLBACK DXApp::WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM l
 	{
 		return g_app->DecodeGesture(hWnd, message, wParam, lParam);
 	}
-	case WM_TOUCH:
-	{
-		cInputs = LOWORD(wParam);
-		pInputs = new TOUCHINPUT[cInputs];
-		if (pInputs) {
-			if (GetTouchInputInfo((HTOUCHINPUT)lParam, cInputs, pInputs, sizeof(TOUCHINPUT))) {
-				for (int i = 0; i < static_cast<INT>(cInputs); i++) {
-					TOUCHINPUT ti = pInputs[i];
-					auto index = GetContactIndex(ti.dwID);
-					if (ti.dwID != 0 && index < MAXPOINTS) {
-						// Do something with your touch input handle
-						ptInput.x = TOUCH_COORD_TO_PIXEL(ti.x);
-						ptInput.y = TOUCH_COORD_TO_PIXEL(ti.y);
-						//std::wstringstream ss;
-						//ss << "touch x: " << ptInput.x << " touch y: " << ptInput.y << '\n';
-						//OutputDebugString(ss.str().c_str());
-						ScreenToClient(hWnd, &ptInput);
-
-						if (ti.dwFlags & TOUCHEVENTF_UP) {
-							points[index][0] = -1;
-							points[index][1] = -1;
-
-							// Remove the old contact index to make it available for the new incremented dwID.
-							// On some touch devices, the dwID value is continuously incremented.
-							RemoveContactIndex(index);
-						}
-						else if (ti.dwFlags & TOUCHEVENTF_MOVE) {
-							//int dx = ptInput.x - g_app->m_lastTouchX;
-							//int dy = ptInput.y - g_app->m_lastTouchY;
-							//float sensitivity = 0.01f;
-							//g_app->m_Yaw += dx * sensitivity;
-							//g_app->m_Pitch += dy * sensitivity;
-							// Clamp pitch to avoid flipping
-							//const float limit = DirectX::XM_PIDIV2 - 0.01f;
-							//g_app->m_Pitch = std::clamp(g_app->m_Pitch, -limit, limit);
-						}
-						else {
-							points[index][0] = ptInput.x;
-							points[index][1] = ptInput.y;
-						}
-
-						//g_app->m_lastTouchX = ptInput.x;
-						//g_app->m_lastTouchY = ptInput.y;
-					}
-				}
-
-				InvalidateRect(hWnd, NULL, FALSE);
-			}
-			// If you handled the message and don't want anything else done with it, you can close it
-			CloseTouchInputHandle((HTOUCHINPUT)lParam);
-			delete[] pInputs;
-		}
-		else {
-			// Handle the error here 
-		}
-		break;
-	}
 
 	default:
 		return DefWindowProc(hWnd, message, wParam, lParam);
@@ -462,6 +400,7 @@ LRESULT DXApp::DecodeGesture(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPar
 		switch (gi.dwID) {
 		case GID_ZOOM: {
 			static double lastArgument = 0.0;
+			OutputDebugString(L"Zoom gesture detected.\n");
 			double argument = static_cast<double>(gi.ullArguments);
 			if (gi.dwFlags & GF_BEGIN) {
 				lastArgument = argument;
@@ -480,6 +419,7 @@ LRESULT DXApp::DecodeGesture(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPar
 			if (gi.dwFlags & GF_BEGIN) {
 				lastPan.x = gi.ptsLocation.x;
 				lastPan.y = gi.ptsLocation.y;
+				OutputDebugString(L"Pan gesture detected.\n");
 			}
 			else {
 				int dx = gi.ptsLocation.x - lastPan.x;
