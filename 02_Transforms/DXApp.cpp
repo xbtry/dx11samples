@@ -1,0 +1,568 @@
+#include "DXApp.h"
+#include <stdexcept>
+#include <sstream>
+int wmId, wmEvent, i, x, y;
+
+UINT cInputs;
+PTOUCHINPUT pInputs;
+POINT ptInput;
+#define MAXPOINTS 10
+// You will use this array to switch the track ids
+int idLookup[MAXPOINTS];
+
+
+// You will use this array to track touch points
+int points[MAXPOINTS][2];
+
+int GetContactIndex(int dwID);
+BOOL RemoveContactIndex(int index);
+
+
+#define WINDOW_CLASS_NAME L"DXAppWindowClass"
+#define WINDOW_TITLE L"DirectX 11 Application"
+
+struct Vertex {
+	DirectX::XMFLOAT3 Pos;
+	DirectX::XMFLOAT4 Color;
+};
+
+struct MatrixBufferType {
+	DirectX::XMMATRIX World;
+	DirectX::XMMATRIX View;
+	DirectX::XMMATRIX Projection;
+};
+
+DXApp* g_app = nullptr;
+
+DXApp::DXApp(HINSTANCE hInstance) : m_hInstance(hInstance), m_hWnd(nullptr)
+{
+	g_app = this;
+}
+
+DXApp::~DXApp()
+{
+	
+}
+
+int DXApp::Run(int nCmdShow)
+{
+	if (!InitWindow(nCmdShow))
+	{
+		return -1;
+	}
+	if (!InitDirect3D())
+	{
+		return -1;
+	}
+	MainLoop();
+	return 0;
+}
+
+bool DXApp::InitWindow(int nCmdShow)
+{
+	WNDCLASSEX wc = { sizeof(WNDCLASSEX) };
+	wc.style = CS_HREDRAW | CS_VREDRAW;
+	wc.lpfnWndProc = WndProc;
+	wc.hInstance = m_hInstance;
+	wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
+	wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+	wc.lpszClassName = WINDOW_CLASS_NAME;
+	if (!RegisterClassEx(&wc))
+	{
+		return false;
+	}
+	m_hWnd = CreateWindowEx(0, WINDOW_CLASS_NAME, WINDOW_TITLE, WS_OVERLAPPEDWINDOW,
+		CW_USEDEFAULT, CW_USEDEFAULT, 800, 600, nullptr, nullptr, m_hInstance, nullptr);
+	if (!m_hWnd)
+	{
+		return false;
+	}
+
+
+	int digitizerStatus = GetSystemMetrics(SM_DIGITIZER);
+	if (digitizerStatus & NID_READY)
+	{
+		if (digitizerStatus & NID_MULTI_INPUT)
+		{
+			OutputDebugString(L"Multi-touch is supported.\n");
+		}
+		else
+		{
+			OutputDebugString(L"Touch is supported, but not multi-touch.\n");
+		}
+	}
+	else
+	{
+		OutputDebugString(L"Touch input not available.\n");
+	}
+
+	if (!RegisterTouchWindow(m_hWnd, 0))
+	{
+		OutputDebugString(L"Failed to register touch window.\n");
+	}
+
+	ShowWindow(m_hWnd, nCmdShow);
+	UpdateWindow(m_hWnd);
+	return true;
+}
+
+bool DXApp::InitDirect3D()
+{
+	RECT clientRect;
+	GetClientRect(m_hWnd, &clientRect);
+	UINT width = clientRect.right - clientRect.left;
+	UINT height = clientRect.bottom - clientRect.top;
+
+	HRESULT hr = D3D11CreateDevice(
+		nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, 0,
+		nullptr, 0, D3D11_SDK_VERSION,
+		&m_d3dDevice, nullptr, &m_d3dContext);
+	if (FAILED(hr))
+	{
+		throw std::runtime_error("Failed to create Direct3D device.");
+	}
+	Microsoft::WRL::ComPtr<IDXGIDevice> dxgiDevice;
+	hr = m_d3dDevice.As(&dxgiDevice);
+	if (FAILED(hr))
+	{
+		throw std::runtime_error("Failed to get DXGI device.");
+	}
+	Microsoft::WRL::ComPtr<IDXGIAdapter> adapter;
+	hr = dxgiDevice->GetAdapter(&adapter);
+	if (FAILED(hr))
+	{
+		throw std::runtime_error("Failed to get DXGI adapter.");
+	}
+	Microsoft::WRL::ComPtr<IDXGIFactory> factory;
+	hr = adapter->GetParent(IID_PPV_ARGS(&factory));
+	if (FAILED(hr))
+	{
+		throw std::runtime_error("Failed to get DXGI factory.");
+	}
+
+	BuildShaders();
+	BuildVertexLayout();
+	BuildGeometryBuffers();
+	BuildConstantBuffers();
+	BuildCamera();
+	UINT qualityLevels = 0;
+	m_d3dDevice->CheckMultisampleQualityLevels(DXGI_FORMAT_R8G8B8A8_UNORM, 4, &qualityLevels);
+	DXGI_SWAP_CHAIN_DESC swapChainDesc = {};
+	swapChainDesc.BufferCount = 1;
+	swapChainDesc.BufferDesc.Width = width;
+	swapChainDesc.BufferDesc.Height = height;
+	swapChainDesc.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+	swapChainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+	swapChainDesc.OutputWindow = m_hWnd;
+	swapChainDesc.SampleDesc.Count = 4;
+	swapChainDesc.SampleDesc.Quality = qualityLevels > 0 ? qualityLevels - 1 : 0;
+	swapChainDesc.Windowed = TRUE;
+	hr = factory->CreateSwapChain(m_d3dDevice.Get(), &swapChainDesc, &m_swapChain);
+	if (FAILED(hr))
+	{
+		throw std::runtime_error("Failed to create swap chain.");
+	}
+	Microsoft::WRL::ComPtr<ID3D11Texture2D> backBuffer;
+	hr = m_swapChain->GetBuffer(0, IID_PPV_ARGS(&backBuffer));
+	if (FAILED(hr))
+	{
+		throw std::runtime_error("Failed to get back buffer.");
+	}
+	hr = m_d3dDevice->CreateRenderTargetView(backBuffer.Get(), nullptr, &m_renderTargetView);
+	if (FAILED(hr))
+	{
+		throw std::runtime_error("Failed to create render target view.");
+	}
+
+	D3D11_TEXTURE2D_DESC depthStencilDesc = {};
+	depthStencilDesc.Width = width;
+	depthStencilDesc.Height = height;
+	depthStencilDesc.MipLevels = 1;
+	depthStencilDesc.ArraySize = 1;
+	depthStencilDesc.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
+	depthStencilDesc.SampleDesc.Count = 4;
+	depthStencilDesc.SampleDesc.Quality = qualityLevels > 0 ? qualityLevels - 1 : 0;
+	depthStencilDesc.Usage = D3D11_USAGE_DEFAULT;
+	depthStencilDesc.BindFlags = D3D11_BIND_DEPTH_STENCIL;
+	depthStencilDesc.CPUAccessFlags = 0;
+	depthStencilDesc.MiscFlags = 0;
+	ID3D11Texture2D* depthStencilBuffer = nullptr;
+	ID3D11DepthStencilView* depthStencilView = nullptr;
+
+	hr = m_d3dDevice->CreateTexture2D(&depthStencilDesc, nullptr, &depthStencilBuffer);
+	if (FAILED(hr))
+	{
+		throw std::runtime_error("Failed to create depth stencil buffer.");
+	}
+
+	hr = m_d3dDevice->CreateDepthStencilView(depthStencilBuffer, nullptr, &depthStencilView);
+	if (FAILED(hr))
+	{
+		depthStencilBuffer->Release();
+		throw std::runtime_error("Failed to create depth stencil view.");
+	}
+
+	m_d3dContext->OMSetRenderTargets(1, m_renderTargetView.GetAddressOf(), depthStencilView);
+	D3D11_VIEWPORT viewport = {};
+	viewport.Width = static_cast<FLOAT>(width);
+	viewport.Height = static_cast<FLOAT>(height);
+	viewport.MinDepth = 0.0f;
+	viewport.MaxDepth = 1.0f;
+	viewport.TopLeftX = 0.0f;
+	viewport.TopLeftY = 0.0f;
+	m_d3dContext->RSSetViewports(1, &viewport);
+	return true;
+}
+
+void DXApp::MainLoop()
+{
+	MSG msg = {};
+	m_timer.Reset();
+	while (msg.message != WM_QUIT)
+	{
+		if (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE))
+		{
+			TranslateMessage(&msg);
+			DispatchMessage(&msg);
+		}
+		else
+		{
+			m_timer.Tick();	
+			if (m_isPaused == false) {
+				CalculateFrameStats();
+				Render();
+			}
+			else {
+				Sleep(100); // Sleep to avoid busy waiting when paused
+			}
+		}
+	}
+}
+
+void DXApp::Render()
+{
+	float clearColor[4] = { 0.1f, 0.1f, 0.3f, 1.0f };
+	static float angle = 0.0f;
+	angle += 0.1f;
+
+	m_World = DirectX::XMMatrixRotationY(angle);
+	m_d3dContext->ClearRenderTargetView(m_renderTargetView.Get(), clearColor);
+	m_d3dContext->OMSetRenderTargets(1, m_renderTargetView.GetAddressOf(), nullptr);
+	UINT stride = sizeof(Vertex);
+	UINT offset = 0;
+	m_d3dContext->IASetInputLayout(m_inputLayout.Get());
+	m_d3dContext->IASetVertexBuffers(0, 1, m_vertexBuffer.GetAddressOf(), &stride, &offset);
+	m_d3dContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+	m_d3dContext->VSSetShader(m_vertexShader, nullptr, 0);
+	m_d3dContext->PSSetShader(m_pixelShader, nullptr, 0);
+	UpdateCamera(m_timer.DeltaTime());
+	m_d3dContext->Draw(3, 0);
+
+	m_swapChain->Present(1, 0);
+}
+
+LRESULT CALLBACK DXApp::WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
+{
+	switch (message)
+	{
+	case WM_ACTIVATE:
+	{
+		if (LOWORD(wParam) == WA_INACTIVE)
+		{
+			if (g_app)
+			{
+				g_app->m_isPaused = true;
+				g_app->m_timer.Stop();
+			}
+		}
+		else
+		{
+			if (g_app)
+			{
+				g_app->m_isPaused = false;
+				g_app->m_timer.Start();
+			}
+		}
+		return 0;
+	}
+	case WM_DESTROY:
+		PostQuitMessage(0);
+		return 0;
+	case WM_PAINT:
+	{
+		PAINTSTRUCT ps;
+		HDC hdc = BeginPaint(hWnd, &ps);
+		EndPaint(hWnd, &ps);
+		return 0;
+	}
+	case WM_SIZE:
+	{
+
+		UINT newWidth = LOWORD(lParam);
+		UINT newHeight = HIWORD(lParam);
+		g_app->m_width = newWidth;
+		g_app->m_height = newHeight;
+		if (g_app && g_app->m_swapChain)
+		{
+			// Release old render target view
+			g_app->m_renderTargetView.Reset();
+
+			// Resize swap chain buffers
+			HRESULT hr = g_app->m_swapChain->ResizeBuffers(
+				1, newWidth, newHeight, DXGI_FORMAT_R8G8B8A8_UNORM, 0);
+
+			if (SUCCEEDED(hr))
+			{
+				// Get new back buffer and create new render target view
+				Microsoft::WRL::ComPtr<ID3D11Texture2D> backBuffer;
+				hr = g_app->m_swapChain->GetBuffer(0, IID_PPV_ARGS(&backBuffer));
+				if (SUCCEEDED(hr))
+				{
+					g_app->m_d3dDevice->CreateRenderTargetView(backBuffer.Get(), nullptr, &g_app->m_renderTargetView);
+					g_app->m_d3dContext->OMSetRenderTargets(1, g_app->m_renderTargetView.GetAddressOf(), nullptr);
+
+					// Update viewport
+					D3D11_VIEWPORT vp = {};
+					vp.Width = static_cast<FLOAT>(newWidth);
+					vp.Height = static_cast<FLOAT>(newHeight);
+					vp.MinDepth = 0.0f;
+					vp.MaxDepth = 1.0f;
+					vp.TopLeftX = 0.0f;
+					vp.TopLeftY = 0.0f;
+					g_app->m_d3dContext->RSSetViewports(1, &vp);
+				}
+			}
+		}
+		return 0;
+	}
+	case WM_TOUCH:
+	{
+		cInputs = LOWORD(wParam);
+		pInputs = new TOUCHINPUT[cInputs];
+		if (pInputs) {
+			if (GetTouchInputInfo((HTOUCHINPUT)lParam, cInputs, pInputs, sizeof(TOUCHINPUT))) {
+				for (int i = 0; i < static_cast<INT>(cInputs); i++) {
+					TOUCHINPUT ti = pInputs[i];
+					auto index = GetContactIndex(ti.dwID);
+					if (ti.dwID != 0 && index < MAXPOINTS) {
+						// Do something with your touch input handle
+						ptInput.x = TOUCH_COORD_TO_PIXEL(ti.x);
+						ptInput.y = TOUCH_COORD_TO_PIXEL(ti.y);
+						std::wstringstream ss;
+						ss << "touch x: " << ptInput.x << " touch y: " << ptInput.y << '\n';
+						OutputDebugString(ss.str().c_str());
+						ScreenToClient(hWnd, &ptInput);
+
+						if (ti.dwFlags & TOUCHEVENTF_UP) {
+							points[index][0] = -1;
+							points[index][1] = -1;
+
+							// Remove the old contact index to make it available for the new incremented dwID.
+							// On some touch devices, the dwID value is continuously incremented.
+							RemoveContactIndex(index);
+						}
+						else {
+							points[index][0] = ptInput.x;
+							points[index][1] = ptInput.y;
+						}
+					}
+				}
+
+				InvalidateRect(hWnd, NULL, FALSE);
+			}
+			// If you handled the message and don't want anything else done with it, you can close it
+			CloseTouchInputHandle((HTOUCHINPUT)lParam);
+			delete[] pInputs;
+		}
+		else {
+			// Handle the error here 
+		}
+		break;
+	}
+
+	default:
+		return DefWindowProc(hWnd, message, wParam, lParam);
+	}
+}
+
+// This function is used to return an index given an ID
+int GetContactIndex(int dwID) {
+	for (int i = 0; i < MAXPOINTS; i++) {
+		if (idLookup[i] == dwID) {
+			return i;
+		}
+	}
+
+	for (int i = 0; i < MAXPOINTS; i++) {
+		if (idLookup[i] == -1) {
+			idLookup[i] = dwID;
+			return i;
+		}
+	}
+	// Out of contacts
+	return -1;
+}
+
+// Mark the specified index as initialized for new use
+BOOL RemoveContactIndex(int index) {
+	if (index >= 0 && index < MAXPOINTS) {
+		idLookup[index] = -1;
+		return true;
+	}
+
+	return false;
+}
+
+void DXApp::CalculateFrameStats()
+{
+	static int frameCount = 0;
+	static float timeElapsed = 0.0f;
+	frameCount++;
+	timeElapsed += m_timer.DeltaTime();
+	if (timeElapsed >= 1.0f)
+	{
+		std::wstringstream ss;
+		ss << L"FPS: " << frameCount << L" | Frame Time: " << (1000.0f / frameCount) << L" ms";
+		SetWindowText(m_hWnd, ss.str().c_str());
+		frameCount = 0;
+		timeElapsed = 0.0f;
+	}
+}
+
+void DXApp::BuildShaders()
+{
+	HRESULT hr;
+
+	// Compile vertex shader
+	hr = D3DCompileFromFile(L"shader.hlsl", nullptr, nullptr, "VSMain", "vs_5_0",
+		D3DCOMPILE_ENABLE_STRICTNESS, 0, &m_vsBlob, &m_errorBlob);
+	if (FAILED(hr))
+	{
+		if (m_errorBlob)
+		{
+			OutputDebugStringA((char*)m_errorBlob->GetBufferPointer());
+		}
+		throw std::runtime_error("Vertex shader compilation failed.");
+	}
+	hr = m_d3dDevice->CreateVertexShader(m_vsBlob->GetBufferPointer(), m_vsBlob->GetBufferSize(), nullptr, &m_vertexShader);
+	if (FAILED(hr)) throw std::runtime_error("Vertex shader creation failed.");
+
+	// Compile pixel shader
+	hr = D3DCompileFromFile(L"shader.hlsl", nullptr, nullptr, "PSMain", "ps_5_0",
+		D3DCOMPILE_ENABLE_STRICTNESS, 0, &m_fsBlob, &m_errorBlob);
+	if (FAILED(hr))
+	{
+		if (m_errorBlob)
+		{
+			OutputDebugStringA((char*)m_errorBlob->GetBufferPointer());
+		}
+		throw std::runtime_error("Pixel shader compilation failed.");
+	}
+	hr = m_d3dDevice->CreatePixelShader(m_fsBlob->GetBufferPointer(), m_fsBlob->GetBufferSize(), nullptr, &m_pixelShader);
+	if (FAILED(hr)) throw std::runtime_error("Pixel shader creation failed.");
+}
+
+
+void DXApp::BuildVertexLayout()
+{
+	D3D11_INPUT_ELEMENT_DESC layout[] =
+	{
+		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT,   0, 0,  D3D11_INPUT_PER_VERTEX_DATA, 0 },
+		{ "COLOR",    0, DXGI_FORMAT_R32G32B32A32_FLOAT,0, 12, D3D11_INPUT_PER_VERTEX_DATA, 0 },
+	};
+
+	HRESULT hr = m_d3dDevice->CreateInputLayout(
+		layout, 2,
+		m_vsBlob->GetBufferPointer(),
+		m_vsBlob->GetBufferSize(),
+		&m_inputLayout);
+	if (FAILED(hr)) throw std::runtime_error("Input layout creation failed.");
+}
+
+void DXApp::BuildGeometryBuffers()
+{
+	Vertex vertices[] =
+	{
+		{ DirectX::XMFLOAT3(0.0f,  0.5f, 0.0f), DirectX::XMFLOAT4(1, 0, 0, 1) },
+		{ DirectX::XMFLOAT3(0.5f, -0.5f, 0.0f), DirectX::XMFLOAT4(0, 1, 0, 1) },
+		{ DirectX::XMFLOAT3(-0.5f, -0.5f, 0.0f), DirectX::XMFLOAT4(0, 0, 1, 1) },
+	};
+
+	D3D11_BUFFER_DESC bd = {};
+	bd.Usage = D3D11_USAGE_DEFAULT;
+	bd.ByteWidth = sizeof(vertices);
+	bd.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+
+	D3D11_SUBRESOURCE_DATA initData = {};
+	initData.pSysMem = vertices;
+
+	HRESULT hr = m_d3dDevice->CreateBuffer(&bd, &initData, &m_vertexBuffer);
+	if (FAILED(hr)) throw std::runtime_error("Vertex buffer creation failed.");
+}
+
+void DXApp::BuildConstantBuffers()
+{
+	D3D11_BUFFER_DESC cbDesc = {};
+	cbDesc.Usage = D3D11_USAGE_DYNAMIC;
+	cbDesc.ByteWidth = sizeof(MatrixBufferType);
+	cbDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+	cbDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+	HRESULT hr = m_d3dDevice->CreateBuffer(&cbDesc, nullptr, &m_constantBuffer);
+	if (FAILED(hr)) throw std::runtime_error("Constant buffer creation failed.");
+
+	// Set the constant buffer to the vertex shader
+	m_World = DirectX::XMMatrixIdentity();
+	m_View = DirectX::XMMatrixLookAtLH(
+		DirectX::XMVectorSet(0.0f, 0.0f, -5.0f, 1.0f),
+		DirectX::XMVectorZero(),
+		DirectX::XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f));
+	m_Proj = DirectX::XMMatrixPerspectiveFovLH(DirectX::XMConvertToRadians(45.0f),
+		static_cast<float>(m_width) / static_cast<float>(m_height), 0.1f, 100.0f);
+
+	MatrixBufferType matrixData{
+		DirectX::XMMatrixTranspose(m_World),
+		DirectX::XMMatrixTranspose(m_View),
+		DirectX::XMMatrixTranspose(m_Proj),
+	};
+
+	D3D11_MAPPED_SUBRESOURCE mappedResource;
+	m_d3dContext->Map(m_constantBuffer.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedResource);
+	memcpy(mappedResource.pData, &matrixData, sizeof(MatrixBufferType));
+	m_d3dContext->Unmap(m_constantBuffer.Get(), 0);
+	m_d3dContext->VSSetConstantBuffers(0, 1, m_constantBuffer.GetAddressOf());
+}
+
+void DXApp::BuildCamera()
+{
+	// Initialize the world, view, and projection matrices
+	m_World = DirectX::XMMatrixIdentity();
+	m_View = DirectX::XMMatrixLookAtLH(
+		DirectX::XMVectorSet(0.0f, 0.0f, -5.0f, 1.0f), // camera pos
+		DirectX::XMVectorZero(), // look at point
+		DirectX::XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f)); // up vector
+	m_Proj = DirectX::XMMatrixPerspectiveFovLH(DirectX::XMConvertToRadians(45.0f),
+		static_cast<float>(m_width) / static_cast<float>(m_height), 0.1f, 100.0f);
+
+	DirectX::XMMATRIX wvp = m_World * m_View * m_Proj;
+	wvp = XMMatrixTranspose(wvp); // Transpose for HLSL if using row-major
+
+	D3D11_MAPPED_SUBRESOURCE mappedResource;
+	m_d3dContext->Map(m_constantBuffer.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedResource);
+	memcpy(mappedResource.pData, &wvp, sizeof(MatrixBufferType));
+	m_d3dContext->Unmap(m_constantBuffer.Get(), 0);
+	m_d3dContext->VSSetConstantBuffers(0, 1, m_constantBuffer.GetAddressOf());
+}
+
+void DXApp::UpdateCamera(float dt)
+{
+	MatrixBufferType matrixData;
+	matrixData.World = DirectX::XMMatrixTranspose(m_World);
+	matrixData.View = DirectX::XMMatrixTranspose(m_View);
+	matrixData.Projection = DirectX::XMMatrixTranspose(m_Proj);
+	D3D11_MAPPED_SUBRESOURCE mappedResource;
+	m_d3dContext->Map(m_constantBuffer.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedResource);
+	memcpy(mappedResource.pData, &matrixData, sizeof(MatrixBufferType));
+	m_d3dContext->Unmap(m_constantBuffer.Get(), 0);
+	m_d3dContext->VSSetConstantBuffers(0, 1, m_constantBuffer.GetAddressOf());
+
+}
