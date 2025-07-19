@@ -79,7 +79,7 @@ bool DXApp::InitWindow(int nCmdShow)
 		return false;
 	}
 
-
+	// Check if touch input is available
 	int digitizerStatus = GetSystemMetrics(SM_DIGITIZER);
 	if (digitizerStatus & NID_READY)
 	{
@@ -95,6 +95,15 @@ bool DXApp::InitWindow(int nCmdShow)
 	else
 	{
 		OutputDebugString(L"Touch input not available.\n");
+	}
+
+	GESTURECONFIG gestureConfig = {0};
+	gestureConfig.dwID = GID_ZOOM | GID_PAN; // Enable zoom and pan gestures
+	gestureConfig.dwWant = GC_ALLGESTURES;
+	gestureConfig.dwBlock = 0;
+	if (!SetGestureConfig(m_hWnd, 0, 1, &gestureConfig, sizeof(GESTURECONFIG)))
+	{
+		OutputDebugString(L"Failed to set gesture configuration.\n");
 	}
 
 	if (!RegisterTouchWindow(m_hWnd, 0))
@@ -372,26 +381,7 @@ LRESULT CALLBACK DXApp::WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM l
 	}
 	case WM_GESTURE:
 	{
-		// Handle gestures here if needed
-		// For example, you can use GetGestureInfo to retrieve gesture information
-		GESTUREINFO gi = { sizeof(GESTUREINFO) };
-		if (GetGestureInfo((HGESTUREINFO)lParam, &gi)) {
-			switch (gi.dwID) {
-			case GID_ZOOM:
-				// Handle zoom gesture
-				if (gi.dwFlags & GF_INERTIA) {
-					float zoomFactor = gi.ullArguments / 10000.0f; // Example conversion
-					g_app->m_Radius *= zoomFactor; // Adjust camera radius based on zoom factor
-				}
-				break;
-			case GID_PAN:
-				// Handle pan gesture
-				break;
-			default:
-				break;
-			}
-		}
-		return 0;
+		return g_app->DecodeGesture(hWnd, message, wParam, lParam);
 	}
 	case WM_TOUCH:
 	{
@@ -420,22 +410,22 @@ LRESULT CALLBACK DXApp::WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM l
 							RemoveContactIndex(index);
 						}
 						else if (ti.dwFlags & TOUCHEVENTF_MOVE) {
-							int dx = ptInput.x - g_app->m_lastTouchX;
-							int dy = ptInput.y - g_app->m_lastTouchY;
-							float sensitivity = 0.01f;
-							g_app->m_Yaw += dx * sensitivity;
-							g_app->m_Pitch += dy * sensitivity;
+							//int dx = ptInput.x - g_app->m_lastTouchX;
+							//int dy = ptInput.y - g_app->m_lastTouchY;
+							//float sensitivity = 0.01f;
+							//g_app->m_Yaw += dx * sensitivity;
+							//g_app->m_Pitch += dy * sensitivity;
 							// Clamp pitch to avoid flipping
-							const float limit = DirectX::XM_PIDIV2 - 0.01f;
-							g_app->m_Pitch = std::clamp(g_app->m_Pitch, -limit, limit);
+							//const float limit = DirectX::XM_PIDIV2 - 0.01f;
+							//g_app->m_Pitch = std::clamp(g_app->m_Pitch, -limit, limit);
 						}
 						else {
 							points[index][0] = ptInput.x;
 							points[index][1] = ptInput.y;
 						}
 
-						g_app->m_lastTouchX = ptInput.x;
-						g_app->m_lastTouchY = ptInput.y;
+						//g_app->m_lastTouchX = ptInput.x;
+						//g_app->m_lastTouchY = ptInput.y;
 					}
 				}
 
@@ -452,6 +442,91 @@ LRESULT CALLBACK DXApp::WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM l
 	}
 
 	default:
+		return DefWindowProc(hWnd, message, wParam, lParam);
+	}
+}
+
+LRESULT DXApp::DecodeGesture(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
+	// Create a structure to populate and retrieve the extra message info.
+	GESTUREINFO gi;
+
+	ZeroMemory(&gi, sizeof(GESTUREINFO));
+
+	gi.cbSize = sizeof(GESTUREINFO);
+
+	BOOL bResult = GetGestureInfo((HGESTUREINFO)lParam, &gi);
+	BOOL bHandled = FALSE;
+
+	if (bResult) {
+		// now interpret the gesture
+		switch (gi.dwID) {
+		case GID_ZOOM: {
+			static double lastArgument = 0.0;
+			double argument = static_cast<double>(gi.ullArguments);
+			if (gi.dwFlags & GF_BEGIN) {
+				lastArgument = argument;
+			}
+			else {
+				// Calculate zoom factor based on the change in argument
+				double zoomFactor = argument / lastArgument;
+				g_app->m_Radius /= static_cast<float>(zoomFactor); // Zoom in/out
+				lastArgument = argument;
+			}
+			bHandled = TRUE;
+			break;
+		}
+		case GID_PAN: {
+			static POINT lastPan = {};
+			if (gi.dwFlags & GF_BEGIN) {
+				lastPan.x = gi.ptsLocation.x;
+				lastPan.y = gi.ptsLocation.y;
+			}
+			else {
+				int dx = gi.ptsLocation.x - lastPan.x;
+				int dy = gi.ptsLocation.y - lastPan.y;
+				float sensitivity = 0.01f;
+				g_app->m_Yaw += dx * sensitivity;
+				g_app->m_Pitch += dy * sensitivity;
+				// Clamp pitch to avoid flipping
+				const float limit = DirectX::XM_PIDIV2 - 0.01f;
+				g_app->m_Pitch = std::clamp(g_app->m_Pitch, -limit, limit);
+				lastPan.x = gi.ptsLocation.x;
+				lastPan.y = gi.ptsLocation.y;
+			}
+			bHandled = TRUE;
+			break;
+		}
+		case GID_ROTATE: {
+			// Code for rotation goes here
+			bHandled = TRUE;
+			break;
+		}
+		case GID_TWOFINGERTAP: {
+			// Code for two-finger tap goes here
+			bHandled = TRUE;
+			break;
+		}
+		case GID_PRESSANDTAP: {
+			// Code for roll over goes here
+			bHandled = TRUE;
+			break;
+		}
+		default: {
+			// A gesture was not recognized
+			break;
+		}
+		}
+	}
+	else {
+		DWORD dwErr = GetLastError();
+		if (dwErr > 0) {
+			//MessageBoxW(hWnd, L"Error!", L"Could not retrieve a GESTUREINFO structure.", MB_OK);
+		}
+	}
+	if (bHandled) {
+		return 0;
+	}
+	else {
 		return DefWindowProc(hWnd, message, wParam, lParam);
 	}
 }

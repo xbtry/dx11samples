@@ -3,6 +3,7 @@
 #define DXAPP_H
 #include <windows.h>
 #include <windowsx.h>
+#include <WinUser.h>
 #include <d3d11.h>
 #include <DirectXMath.h>
 #include <d3dcompiler.h>
@@ -27,7 +28,7 @@ private:
 	void BuildConstantBuffers();
 	void BuildCamera();
 	void UpdateCamera();
-
+	LRESULT DecodeGesture(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
 	int m_lastMouseX;
 	int m_lastMouseY;
 	int m_lastTouchX;
