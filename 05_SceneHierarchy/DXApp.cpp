@@ -114,9 +114,17 @@ bool DXApp::InitDirect3D()
 	UINT height = clientRect.bottom - clientRect.top;
 
 	HRESULT hr = D3D11CreateDevice(
-		nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, 0,
-		nullptr, 0, D3D11_SDK_VERSION,
-		&m_d3dDevice, nullptr, &m_d3dContext);
+		nullptr, 
+		D3D_DRIVER_TYPE_HARDWARE, 
+		nullptr,
+		0, // FOR DEBUG -> D3D11_CREATE_DEVICE_DEBUG,
+		nullptr, 
+		0, 
+		D3D11_SDK_VERSION,
+		&m_d3dDevice,
+		nullptr, 
+		&m_d3dContext
+	);
 	if (FAILED(hr))
 	{
 		throw std::runtime_error("Failed to create Direct3D device.");
@@ -150,7 +158,7 @@ bool DXApp::InitDirect3D()
 
 	D3D11_RASTERIZER_DESC rasterDesc = {};
 	rasterDesc.FillMode = D3D11_FILL_SOLID;
-	rasterDesc.CullMode = D3D11_CULL_NONE; // disable backface culling
+	rasterDesc.CullMode = D3D11_CULL_BACK; // disable backface culling
 	rasterDesc.DepthClipEnable = TRUE;
 
 	hr = m_d3dDevice->CreateRasterizerState(&rasterDesc, &m_rasterizerState);
@@ -158,15 +166,30 @@ bool DXApp::InitDirect3D()
 		throw std::runtime_error("Failed to create rasterizer state");
 	}
 
+
 	// Set it immediately
 	m_d3dContext->RSSetState(m_rasterizerState.Get());
+
+	D3D11_DEPTH_STENCIL_DESC dsDesc = {};
+	dsDesc.DepthEnable = true;
+	dsDesc.StencilEnable = true;
+	m_d3dDevice->CreateDepthStencilState(&dsDesc, &m_depthState);
+	m_d3dContext->OMSetDepthStencilState(m_depthState.Get(), 0);
+
+	/*D3D11_BLEND_DESC blendDesc = {};
+	blendDesc.RenderTarget[0].BlendEnable = FALSE;
+	blendDesc.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
+	m_d3dDevice->CreateBlendState(&blendDesc, &m_blendState);
+	m_d3dContext->OMSetBlendState(m_blendState.Get(), nullptr, 0xFFFFFFFF);*/
 
 	BuildConstantBuffers();
 	BuildCamera();
 
 	m_rootNode = std::make_unique<SceneNode>();
-	TriangleNode* triangleNode = new TriangleNode(m_d3dDevice.Get());
-	m_rootNode->AddChild(std::shared_ptr<TriangleNode>(triangleNode));
+	//TriangleNode* triangleNode = new TriangleNode(m_d3dDevice.Get());
+	//m_rootNode->AddChild(std::shared_ptr<TriangleNode>(triangleNode));
+	CubeNode* cubeNode = new CubeNode(m_d3dDevice.Get());
+	m_rootNode->AddChild(std::shared_ptr<CubeNode>(cubeNode));
 	UINT qualityLevels = 0;
 	m_d3dDevice->CheckMultisampleQualityLevels(DXGI_FORMAT_R8G8B8A8_UNORM, 4, &qualityLevels);
 	DXGI_SWAP_CHAIN_DESC swapChainDesc = {};
@@ -272,8 +295,6 @@ void DXApp::Render()
 	m_d3dContext->OMSetRenderTargets(1, m_renderTargetView.GetAddressOf(), nullptr);
 	m_rootNode->Update(DirectX::XMMatrixIdentity());
 	m_rootNode->Draw(m_d3dContext.Get());
-	DirectX::XMMATRIX wvp = m_World * m_View * m_Proj;
-	m_rootNode->Update(wvp);
 	UpdateCamera();
 	m_swapChain->Present(1, 0);
 }

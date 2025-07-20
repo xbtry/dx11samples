@@ -6,7 +6,7 @@
 #include "GameTimer.h"
 #include "SceneNode.h"
 #include "TriangleNode.h"
-
+#include "CubeNode.h"
 class DXApp
 {
 public:
@@ -50,7 +50,8 @@ private:
 	Microsoft::WRL::ComPtr<ID3D11Buffer> m_constantBuffer;
 	Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> m_texture;
 	Microsoft::WRL::ComPtr<ID3D11RasterizerState> m_rasterizerState;
-
+	Microsoft::WRL::ComPtr<ID3D11DepthStencilState> m_depthState;
+	Microsoft::WRL::ComPtr<ID3D11BlendState> m_blendState;
 	DirectX::XMMATRIX m_Proj;
 	DirectX::XMMATRIX m_View;
 	DirectX::XMMATRIX m_World;

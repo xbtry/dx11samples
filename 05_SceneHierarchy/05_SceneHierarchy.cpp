@@ -7,6 +7,7 @@
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
 {
+    //LoadLibraryA("WinPixGpuCapturer.dll");
     DXApp app(hInstance);
     return app.Run(nCmdShow);
 }

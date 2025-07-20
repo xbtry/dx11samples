@@ -130,6 +130,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="05_SceneHierarchy.h" />
+    <ClInclude Include="CubeNode.h" />
     <ClInclude Include="DXApp.h" />
     <ClInclude Include="framework.h" />
     <ClInclude Include="GameTimer.h" />
@@ -142,6 +143,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="05_SceneHierarchy.cpp" />
+    <ClCompile Include="CubeNode.cpp" />
     <ClCompile Include="DXApp.cpp" />
     <ClCompile Include="GameTimer.cpp" />
     <ClCompile Include="SceneNode.cpp" />
@@ -157,6 +159,7 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
+    <None Include="WinPixGpuCapturer.dll" />
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="TrianglePixelShader.hlsl">
