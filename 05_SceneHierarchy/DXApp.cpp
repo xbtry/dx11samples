@@ -170,11 +170,11 @@ bool DXApp::InitDirect3D()
 	// Set it immediately
 	m_d3dContext->RSSetState(m_rasterizerState.Get());
 
-	D3D11_DEPTH_STENCIL_DESC dsDesc = {};
+	/*D3D11_DEPTH_STENCIL_DESC dsDesc = {};
 	dsDesc.DepthEnable = true;
 	dsDesc.StencilEnable = true;
 	m_d3dDevice->CreateDepthStencilState(&dsDesc, &m_depthState);
-	m_d3dContext->OMSetDepthStencilState(m_depthState.Get(), 0);
+	m_d3dContext->OMSetDepthStencilState(m_depthState.Get(), 0);*/
 
 	/*D3D11_BLEND_DESC blendDesc = {};
 	blendDesc.RenderTarget[0].BlendEnable = FALSE;
@@ -190,6 +190,8 @@ bool DXApp::InitDirect3D()
 	//m_rootNode->AddChild(std::shared_ptr<TriangleNode>(triangleNode));
 	CubeNode* cubeNode = new CubeNode(m_d3dDevice.Get());
 	m_rootNode->AddChild(std::shared_ptr<CubeNode>(cubeNode));
+	//std::make_shared<SphereNode>(m_d3dDevice.Get());
+	//m_rootNode->AddChild(std::make_shared<SphereNode>(m_d3dDevice.Get()));
 	UINT qualityLevels = 0;
 	m_d3dDevice->CheckMultisampleQualityLevels(DXGI_FORMAT_R8G8B8A8_UNORM, 4, &qualityLevels);
 	DXGI_SWAP_CHAIN_DESC swapChainDesc = {};

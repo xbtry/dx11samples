@@ -16,7 +16,7 @@ private:
 		DirectX::XMFLOAT2 uv;
 	};
 	void BuildGeometryBuffers(ID3D11Device* device);
-	Shaders* m_shader;
-	Vertex* m_vertices;
+	Shaders* m_shader = nullptr;
+	Vertex* m_vertices = nullptr;
 	Microsoft::WRL::ComPtr<ID3D11Buffer> m_vertexBuffer;
 };

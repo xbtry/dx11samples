@@ -7,6 +7,7 @@
 #include "SceneNode.h"
 #include "TriangleNode.h"
 #include "CubeNode.h"
+#include "SphereNode.h"
 class DXApp
 {
 public:

@@ -2,11 +2,11 @@
 
 #include "SceneNode.h"
 #include "Shaders.h"
-class CubeNode : public SceneNode
+class SphereNode : public SceneNode
 {
 public:
-	CubeNode(ID3D11Device* device);
-	~CubeNode();
+	SphereNode(ID3D11Device* device);
+	~SphereNode();
 	void Draw(ID3D11DeviceContext* context) override;
 	void Update(const DirectX::XMMATRIX& parentTransform) override;
 private:
@@ -15,6 +15,7 @@ private:
 		DirectX::XMFLOAT4 color;
 		DirectX::XMFLOAT2 uv;
 	};
+	int m_indexCount;
 	void BuildGeometryBuffers(ID3D11Device* device);
 	Shaders* m_shader = nullptr;
 	Vertex* m_vertices = nullptr;
